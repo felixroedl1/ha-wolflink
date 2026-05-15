@@ -199,6 +199,9 @@ class WolfLinkOneTimeHotWaterButton(
             if trigger_value is None:
                 continue
             tried_candidate = True
+            if candidate.parameter_id in self.coordinator.data:
+                value_id, _ = self.coordinator.data[candidate.parameter_id]
+                candidate.value_id = value_id
 
             try:
                 write_value: int | float | str = int(trigger_value)

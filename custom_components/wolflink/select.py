@@ -214,6 +214,9 @@ class WolfLinkProgramSelect(CoordinatorEntity[WolfLinkCoordinator], SelectEntity
                 continue
 
             has_option_candidate = True
+            if candidate.parameter_id in self.coordinator.data:
+                value_id, _ = self.coordinator.data[candidate.parameter_id]
+                candidate.value_id = value_id
             mapped_value = option_to_value[option]
             try:
                 write_value: int | float | str = int(mapped_value)

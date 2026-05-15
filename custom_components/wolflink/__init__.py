@@ -1,6 +1,7 @@
 """The Wolf SmartSet Service integration."""
 
 import logging
+import re
 from functools import partial
 
 from httpx import RequestError
@@ -12,7 +13,9 @@ from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.httpx_client import create_async_httpx_client
+from homeassistant.util import slugify
 
 from .const import (
     CONF_EXPERT_MODE,
@@ -52,6 +55,77 @@ def _resolve_expert_mode(entry: ConfigEntry) -> bool | str:
     if isinstance(expert_password, str) and expert_password.strip():
         return expert_password.strip()
     return True
+
+
+def _entity_prefix_for_entry(entry: ConfigEntry) -> str:
+    """Build the standardized entity ID prefix for a config entry."""
+    prefix_seed = (
+        entry.data.get(DEVICE_NAME)
+        or entry.title
+        or entry.unique_id
+        or DOMAIN
+    )
+    prefix_slug = slugify(str(prefix_seed)) or DOMAIN
+    if prefix_slug.startswith(f"{DOMAIN}_"):
+        return prefix_slug
+    if prefix_slug == DOMAIN:
+        return DOMAIN
+    return f"{DOMAIN}_{prefix_slug}"
+
+
+def _prefixed_object_id(prefix: str, object_id: str) -> str:
+    """Return object_id with expected prefix."""
+    expected_prefix = f"{prefix}_"
+    if object_id.startswith(expected_prefix):
+        return object_id
+
+    normalized = object_id
+    if normalized.startswith(f"{DOMAIN}_"):
+        normalized = normalized[len(DOMAIN) + 1 :]
+        device_slug = prefix[len(DOMAIN) + 1 :] if prefix.startswith(f"{DOMAIN}_") else ""
+        if device_slug and normalized.startswith(f"{device_slug}_"):
+            normalized = normalized[len(device_slug) + 1 :]
+        elif re.match(r"^[a-z0-9]*\d[a-z0-9]*_", normalized):
+            normalized = normalized.split("_", maxsplit=1)[1]
+    normalized = normalized.strip("_")
+    if not normalized:
+        normalized = object_id.strip("_")
+    return f"{prefix}_{normalized}"
+
+
+def _migrate_entity_prefixes(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Migrate existing wolflink entity IDs to one unified prefix."""
+    entity_registry = er.async_get(hass)
+    prefix = _entity_prefix_for_entry(entry)
+
+    for registry_entry in er.async_entries_for_config_entry(
+        entity_registry, entry.entry_id
+    ):
+        if "." not in registry_entry.entity_id:
+            continue
+
+        domain, object_id = registry_entry.entity_id.split(".", maxsplit=1)
+        new_object_id = _prefixed_object_id(prefix, object_id)
+        new_entity_id = f"{domain}.{new_object_id}"
+        if new_entity_id == registry_entry.entity_id:
+            continue
+
+        try:
+            entity_registry.async_update_entity(
+                registry_entry.entity_id,
+                new_entity_id=new_entity_id,
+            )
+            _LOGGER.debug(
+                "Migrated entity_id from %s to %s",
+                registry_entry.entity_id,
+                new_entity_id,
+            )
+        except ValueError:
+            _LOGGER.warning(
+                "Could not migrate entity_id from %s to %s because target already exists",
+                registry_entry.entity_id,
+                new_entity_id,
+            )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: WolflinkConfigEntry) -> bool:
@@ -115,7 +189,7 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate old entry."""
     # convert unique_id to string
-    if entry.version == 1 and entry.minor_version == 1:
+    if entry.version == 1 and entry.minor_version < 2:
         if isinstance(entry.unique_id, int):
             hass.config_entries.async_update_entry(
                 entry, unique_id=str(entry.unique_id)
@@ -134,6 +208,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     device.id, new_identifiers=new_identifiers
                 )
         hass.config_entries.async_update_entry(entry, minor_version=2)
+
+    if entry.version == 1 and entry.minor_version < 3:
+        _migrate_entity_prefixes(hass, entry)
+        hass.config_entries.async_update_entry(entry, minor_version=3)
 
     return True
 
