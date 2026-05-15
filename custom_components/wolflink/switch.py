@@ -4,7 +4,7 @@ import logging
 import re
 
 from httpx import RequestError
-from wolf_comm.models import ListItemParameter
+from wolf_comm.models import ListItemParameter, Parameter
 from wolf_comm.token_auth import InvalidAuth
 from wolf_comm.wolf_client import ParameterWriteError, WriteFailed
 
@@ -30,19 +30,30 @@ def _normalize_words(text: str) -> set[str]:
     return {word for word in cleaned.split() if word}
 
 
-def _is_mode_switch(parameter: ListItemParameter) -> bool:
+def _is_mode_switch(parameter: Parameter) -> bool:
     """Return if parameter is a writable party/holiday mode switch."""
     if parameter.read_only:
         return False
 
-    combined = f"{parameter.parent} {parameter.name}".casefold()
-    return "partymodus" in combined or "urlaubsmodus" in combined
+    words = _normalize_words(f"{parameter.parent} {parameter.name}")
+    has_party = any(
+        word.startswith("party") or word.startswith("partybetrieb")
+        for word in words
+    )
+    has_holiday = any(
+        word.startswith("urlaub") or word.startswith("holiday")
+        for word in words
+    )
+    return has_party or has_holiday
 
 
 def _resolve_on_off_values(
-    parameter: ListItemParameter,
+    parameter: Parameter,
 ) -> tuple[int | str, int | str] | None:
     """Resolve on/off values from list items."""
+    if not isinstance(parameter, ListItemParameter):
+        return 1, 0
+
     on_value: int | str | None = None
     off_value: int | str | None = None
     for item in parameter.items:
@@ -71,7 +82,7 @@ async def async_setup_entry(
     coordinator = config_entry.runtime_data
     entities: list[WolfLinkModeSwitch] = []
     for parameter in coordinator.parameters:
-        if not isinstance(parameter, ListItemParameter) or not _is_mode_switch(parameter):
+        if not _is_mode_switch(parameter):
             continue
         resolved = _resolve_on_off_values(parameter)
         if resolved is None:
@@ -111,7 +122,7 @@ class WolfLinkModeSwitch(CoordinatorEntity[WolfLinkCoordinator], SwitchEntity):
     def __init__(
         self,
         coordinator: WolfLinkCoordinator,
-        parameter: ListItemParameter,
+        parameter: Parameter,
         device_id: int,
         on_value: int | str,
         off_value: int | str,
@@ -138,7 +149,11 @@ class WolfLinkModeSwitch(CoordinatorEntity[WolfLinkCoordinator], SwitchEntity):
 
         value_id, raw_value = self.coordinator.data[self.parameter.parameter_id]
         self.parameter.value_id = value_id
-        self._is_on = str(raw_value) == self._on_value
+        raw_value_lower = str(raw_value).strip().casefold()
+        self._is_on = (
+            raw_value_lower == self._on_value.casefold()
+            or raw_value_lower in _ON_MARKERS
+        )
         return self._is_on
 
     @property

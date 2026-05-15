@@ -61,6 +61,11 @@ def _is_heating_setpoint_correction(parameter: Parameter) -> bool:
     return "heizung" in combined and "sollwertkorrektur" in combined
 
 
+def _display_name(parameter: Parameter) -> str:
+    """Return display name for parameter."""
+    return f"{parameter.parent} {parameter.name}".strip()
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: WolflinkConfigEntry,
@@ -69,12 +74,33 @@ async def async_setup_entry(
     """Set up all writable warmwater setpoints."""
     coordinator = config_entry.runtime_data
 
-    matching_parameters = [
+    raw_parameters = [
         parameter
         for parameter in coordinator.parameters
         if _is_warmwater_setpoint(parameter)
         or _is_heating_setpoint_correction(parameter)
     ]
+
+    deduplicated_by_name: dict[str, Parameter] = {}
+    for parameter in raw_parameters:
+        key = _display_name(parameter).casefold()
+        if key in deduplicated_by_name:
+            existing = deduplicated_by_name[key]
+            _LOGGER.debug(
+                "Skipping duplicate writable number '%s' (parameter_id=%s, value_id=%s, bundle_id=%s); "
+                "already mapped to parameter_id=%s, value_id=%s, bundle_id=%s",
+                _display_name(parameter),
+                parameter.parameter_id,
+                parameter.value_id,
+                parameter.bundle_id,
+                existing.parameter_id,
+                existing.value_id,
+                existing.bundle_id,
+            )
+            continue
+        deduplicated_by_name[key] = parameter
+
+    matching_parameters = list(deduplicated_by_name.values())
     _LOGGER.debug(
         "Discovered %s writable warmwater setpoint parameters: %s",
         len(matching_parameters),
@@ -112,7 +138,7 @@ class WolfLinkWarmwaterSetpointNumber(
         super().__init__(coordinator)
         self.parameter = parameter
         self._is_heating_correction = _is_heating_setpoint_correction(parameter)
-        self._attr_name = f"{parameter.parent} {parameter.name}"
+        self._attr_name = _display_name(parameter)
         self._attr_unique_id = f"{device_id}:{parameter.parameter_id}:setpoint"
         self._attr_device_class = NumberDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
