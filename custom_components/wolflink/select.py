@@ -47,14 +47,21 @@ def _select_preferred_parameter(
     group: list[ListItemParameter],
 ) -> ListItemParameter:
     """Pick the best candidate from duplicate parameters."""
+    return _sorted_candidates(group)[0]
+
+
+def _sorted_candidates(
+    parameters: list[ListItemParameter],
+) -> list[ListItemParameter]:
+    """Return candidates sorted by preference."""
     return sorted(
-        group,
+        parameters,
         key=lambda parameter: (
             _is_expert_parameter(parameter),  # Prefer non-expert variant.
             0 if str(parameter.bundle_id).isdigit() else 1,
             parameter.parameter_id,
         ),
-    )[0]
+    )
 
 
 def _is_program_select(parameter: ListItemParameter) -> bool:
@@ -129,8 +136,13 @@ async def async_setup_entry(
     )
     async_add_entities(
         [
-            WolfLinkProgramSelect(coordinator, parameter, coordinator.device_id)
-            for parameter in matching_parameters
+            WolfLinkProgramSelect(
+                coordinator,
+                _select_preferred_parameter(group),
+                _sorted_candidates(group),
+                coordinator.device_id,
+            )
+            for group in grouped_by_name.values()
         ]
     )
 
@@ -142,11 +154,13 @@ class WolfLinkProgramSelect(CoordinatorEntity[WolfLinkCoordinator], SelectEntity
         self,
         coordinator: WolfLinkCoordinator,
         parameter: ListItemParameter,
+        candidates: list[ListItemParameter],
         device_id: int,
     ) -> None:
         """Initialize select entity."""
         super().__init__(coordinator)
         self.parameter = parameter
+        self._candidates = candidates
         self._attr_name = _display_name(parameter)
         self._attr_unique_id = f"{device_id}:{parameter.parameter_id}:select"
         self._attr_device_info = DeviceInfo(
@@ -162,12 +176,21 @@ class WolfLinkProgramSelect(CoordinatorEntity[WolfLinkCoordinator], SelectEntity
     @property
     def current_option(self) -> str | None:
         """Return selected option."""
-        if self.parameter.parameter_id not in self.coordinator.data:
-            return self._current_option
+        for candidate in self._candidates:
+            if candidate.parameter_id not in self.coordinator.data:
+                continue
 
-        value_id, raw_value = self.coordinator.data[self.parameter.parameter_id]
-        self.parameter.value_id = value_id
-        self._current_option = self._value_to_option.get(str(raw_value))
+            value_id, raw_value = self.coordinator.data[candidate.parameter_id]
+            candidate.value_id = value_id
+            value_to_option = {str(item.value): item.name for item in candidate.items}
+            resolved_option = value_to_option.get(str(raw_value))
+            if resolved_option is not None:
+                self.parameter = candidate
+                self._option_to_value = {item.name: item.value for item in candidate.items}
+                self._value_to_option = value_to_option
+                self._attr_options = list(dict.fromkeys(item.name for item in candidate.items))
+                self._current_option = resolved_option
+                return self._current_option
         return self._current_option
 
     @property
@@ -177,30 +200,55 @@ class WolfLinkProgramSelect(CoordinatorEntity[WolfLinkCoordinator], SelectEntity
             "parameter_id": self.parameter.parameter_id,
             "value_id": self.parameter.value_id,
             "parent": self.parameter.parent,
+            "candidate_parameter_ids": [candidate.parameter_id for candidate in self._candidates],
         }
 
     async def async_select_option(self, option: str) -> None:
         """Select new program option."""
-        if option not in self._option_to_value:
+        last_exception: Exception | None = None
+        has_option_candidate = False
+
+        for candidate in self._candidates:
+            option_to_value = {item.name: item.value for item in candidate.items}
+            if option not in option_to_value:
+                continue
+
+            has_option_candidate = True
+            mapped_value = option_to_value[option]
+            try:
+                write_value: int | float | str = int(mapped_value)
+            except (TypeError, ValueError):
+                write_value = str(mapped_value)
+
+            try:
+                await self.coordinator.async_write_parameter_value(candidate, write_value)
+            except InvalidAuth as exception:
+                raise HomeAssistantError(
+                    "Invalid authentication while writing program selection."
+                ) from exception
+            except (ParameterWriteError, WriteFailed, RequestError) as exception:
+                last_exception = exception
+                _LOGGER.debug(
+                    "Write failed for select '%s' candidate parameter_id=%s bundle_id=%s: %s",
+                    self.name,
+                    candidate.parameter_id,
+                    candidate.bundle_id,
+                    exception,
+                )
+                continue
+
+            self.parameter = candidate
+            self._option_to_value = option_to_value
+            self._value_to_option = {str(item.value): item.name for item in candidate.items}
+            self._attr_options = list(dict.fromkeys(item.name for item in candidate.items))
+            self._current_option = option
+            self.async_write_ha_state()
+            await self.coordinator.async_request_refresh()
+            return
+
+        if not has_option_candidate:
             raise HomeAssistantError(f"Invalid option '{option}' for {self.name}.")
-
-        mapped_value = self._option_to_value[option]
-        try:
-            write_value: int | float | str = int(mapped_value)
-        except (TypeError, ValueError):
-            write_value = str(mapped_value)
-
-        try:
-            await self.coordinator.async_write_parameter_value(self.parameter, write_value)
-        except InvalidAuth as exception:
+        if last_exception is not None:
             raise HomeAssistantError(
-                "Invalid authentication while writing program selection."
-            ) from exception
-        except (ParameterWriteError, WriteFailed, RequestError) as exception:
-            raise HomeAssistantError(
-                f"Could not write program selection: {exception}"
-            ) from exception
-
-        self._current_option = option
-        self.async_write_ha_state()
-        await self.coordinator.async_request_refresh()
+                f"Could not write program selection: {last_exception}"
+            ) from last_exception
