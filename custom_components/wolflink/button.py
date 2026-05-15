@@ -20,7 +20,24 @@ from .coordinator import WolflinkConfigEntry, WolfLinkCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-_TRIGGER_MARKERS = {"ein", "start", "aktiv", "aktiviert", "ja", "yes", "1"}
+_TRIGGER_MARKERS = {
+    "ein",
+    "on",
+    "start",
+    "aktiv",
+    "aktiviert",
+    "ja",
+    "yes",
+    "1",
+    "1x",
+    "einmal",
+    "nachladen",
+    "ladung",
+    "anforderung",
+    "request",
+    "boost",
+}
+_OFF_MARKERS = {"aus", "off", "deaktiviert", "deaktiv", "nein", "no", "0", "stop"}
 
 
 def _normalize_words(text: str) -> set[str]:
@@ -87,6 +104,23 @@ def _resolve_trigger_value(parameter: ListItemParameter) -> int | str | None:
             continue
     if numeric_values:
         return max(numeric_values)
+    return None
+
+
+def _resolve_off_value(parameter: ListItemParameter) -> int | str | None:
+    """Resolve the write value that deactivates the trigger."""
+    for item in parameter.items:
+        if _normalize_words(item.name) & _OFF_MARKERS:
+            return item.value
+
+    numeric_values: list[int] = []
+    for item in parameter.items:
+        try:
+            numeric_values.append(int(item.value))
+        except (TypeError, ValueError):
+            continue
+    if numeric_values:
+        return min(numeric_values)
     return None
 
 
@@ -188,6 +222,13 @@ class WolfLinkOneTimeHotWaterButton(
             "parent": self.parameter.parent,
             "trigger_value": self._trigger_value,
             "candidate_parameter_ids": [candidate.parameter_id for candidate in self._candidates],
+            "candidate_items": {
+                str(candidate.parameter_id): [
+                    {"name": item.name, "value": str(item.value)}
+                    for item in candidate.items
+                ]
+                for candidate in self._candidates
+            },
         }
 
     async def async_press(self) -> None:
@@ -200,17 +241,36 @@ class WolfLinkOneTimeHotWaterButton(
             if trigger_value is None:
                 continue
             tried_candidate = True
+
+            off_value = _resolve_off_value(candidate)
+            current_raw_value: str | None = None
             if candidate.parameter_id in self.coordinator.data:
                 value_id, _ = self.coordinator.data[candidate.parameter_id]
                 candidate.value_id = value_id
+                current_raw_value = str(self.coordinator.data[candidate.parameter_id][1])
+
+            write_sequence: list[int | float | str] = []
+            if (
+                off_value is not None
+                and current_raw_value is not None
+                and str(trigger_value).casefold().strip()
+                == current_raw_value.casefold().strip()
+            ):
+                write_sequence.append(
+                    int(off_value) if str(off_value).lstrip("-").isdigit() else str(off_value)
+                )
 
             try:
                 write_value: int | float | str = int(trigger_value)
             except (TypeError, ValueError):
                 write_value = str(trigger_value)
+            write_sequence.append(write_value)
 
             try:
-                await self.coordinator.async_write_parameter_value(candidate, write_value)
+                for sequence_value in write_sequence:
+                    await self.coordinator.async_write_parameter_value(
+                        candidate, sequence_value
+                    )
             except InvalidAuth as exception:
                 raise HomeAssistantError(
                     "Invalid authentication while triggering 1x hot water."
