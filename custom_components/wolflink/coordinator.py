@@ -1,6 +1,7 @@
 """DataUpdateCoordinator for the Wolf SmartSet Service integration."""
 
 from datetime import timedelta
+import inspect
 import logging
 
 from httpx import RequestError
@@ -36,13 +37,23 @@ class WolfLinkCoordinator(DataUpdateCoordinator[dict[int, tuple[int, str]]]):
         device_id: int,
     ) -> None:
         """Initialize the coordinator."""
-        super().__init__(
-            hass,
-            _LOGGER,
-            config_entry=entry,
-            name=DOMAIN,
-            update_interval=timedelta(seconds=60),
+        coordinator_kwargs = {
+            "name": DOMAIN,
+            "update_interval": timedelta(seconds=60),
+        }
+        supports_config_entry = (
+            "config_entry"
+            in inspect.signature(DataUpdateCoordinator.__init__).parameters
         )
+        if supports_config_entry:
+            super().__init__(
+                hass,
+                _LOGGER,
+                config_entry=entry,
+                **coordinator_kwargs,
+            )
+        else:
+            super().__init__(hass, _LOGGER, **coordinator_kwargs)
         self._wolf_client = wolf_client
         self.parameters = parameters
         self._gateway_id = gateway_id
