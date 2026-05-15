@@ -72,20 +72,45 @@ def _is_program_select(parameter: ListItemParameter) -> bool:
     combined = f"{parameter.parent} {parameter.name}"
     combined_lower = combined.casefold()
     words = _normalize_words(combined)
+    option_words = _normalize_words(" ".join(item.name for item in parameter.items))
 
-    is_heating_or_warmwater = (
+    has_heating_or_warmwater_context = (
         "heizung" in combined_lower
         or "warmwasser" in combined_lower
+        or "trinkwasser" in combined_lower
         or "heating" in words
         or "dhw" in words
+        or ("hot" in words and "water" in words)
     )
-    is_program_choice = (
+    has_program_wording = (
         "programmwahl" in combined_lower
         or "zeitprogramm" in combined_lower
         or "time program" in combined_lower
+        or "prog. select" in combined_lower
+        or "prog select" in combined_lower
+        or "program selector" in combined_lower
         or ("program" in words and ("choice" in words or "selection" in words))
     )
-    return is_heating_or_warmwater and is_program_choice
+
+    has_time_program_options = (
+        ("zeitprogramm" in option_words or ("time" in option_words and "program" in option_words))
+        and any(token in option_words for token in {"1", "2", "3"})
+    )
+    has_mode_options = (
+        ("auto" in option_words or "automatic" in option_words)
+        and (
+            "standby" in option_words
+            or "permanent" in option_words
+            or "sparen" in option_words
+            or "economy" in option_words
+        )
+    )
+
+    return (
+        (has_program_wording and has_heating_or_warmwater_context)
+        or (has_program_wording and (has_time_program_options or has_mode_options))
+        or (has_heating_or_warmwater_context and (has_time_program_options or has_mode_options))
+    )
 
 
 async def async_setup_entry(
@@ -95,6 +120,45 @@ async def async_setup_entry(
 ) -> None:
     """Set up selectable program parameters."""
     coordinator = config_entry.runtime_data
+
+    for parameter in coordinator.parameters:
+        combined = f"{parameter.parent} {parameter.name}".casefold()
+        if not any(
+            marker in combined
+            for marker in (
+                "programm",
+                "program",
+                "zeitprogramm",
+                "time program",
+                "heizung",
+                "warmwasser",
+                "dhw",
+            )
+        ):
+            continue
+        if not isinstance(parameter, ListItemParameter):
+            _LOGGER.debug(
+                "Program-like parameter is not a ListItemParameter and will be skipped: "
+                "name=%s parent=%s parameter_id=%s value_id=%s type=%s read_only=%s",
+                parameter.name,
+                parameter.parent,
+                parameter.parameter_id,
+                parameter.value_id,
+                type(parameter).__name__,
+                parameter.read_only,
+            )
+            continue
+        if not _is_program_select(parameter):
+            _LOGGER.debug(
+                "Program-like ListItemParameter filtered out: name=%s parent=%s parameter_id=%s value_id=%s read_only=%s options=%s",
+                parameter.name,
+                parameter.parent,
+                parameter.parameter_id,
+                parameter.value_id,
+                parameter.read_only,
+                [item.name for item in parameter.items],
+            )
+
     raw_parameters = [
         parameter
         for parameter in coordinator.parameters
@@ -225,7 +289,11 @@ class WolfLinkProgramSelect(CoordinatorEntity[WolfLinkCoordinator], SelectEntity
                 write_value = str(mapped_value)
 
             try:
-                await self.coordinator.async_write_parameter_value(candidate, write_value)
+                await self.coordinator.async_write_parameter_value(
+                    candidate,
+                    write_value,
+                    prefer_compat_endpoint=True,
+                )
             except InvalidAuth as exception:
                 raise HomeAssistantError(
                     "Invalid authentication while writing program selection."
