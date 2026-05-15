@@ -16,6 +16,16 @@ from wolf_comm.token_auth import InvalidAuth, PasswordToLong, Tokens
 _LOGGER = logging.getLogger(__name__)
 
 _RETRY_DELAYS = (2, 5)
+_LOGIN_ERROR_KEYWORDS = (
+    "invalid",
+    "password",
+    "user name",
+    "username",
+    "blocked",
+    "lock",
+    "captcha",
+    "too many",
+)
 
 
 def _extract_authorization_code(response: Response) -> str | None:
@@ -51,6 +61,27 @@ def _extract_verification_token(response_text: str) -> str | None:
     return None
 
 
+def _extract_login_error(response_text: str) -> str | None:
+    """Extract likely login error message from returned HTML."""
+    tree = html.document_fromstring(response_text)
+    candidates = tree.xpath(
+        (
+            '//*[contains(@class,"validation-summary-errors") '
+            'or contains(@class,"field-validation-error") '
+            'or contains(@class,"text-danger") '
+            'or contains(@class,"alert")]//text()'
+        )
+    )
+    for raw in candidates:
+        text = " ".join(raw.split())
+        if not text:
+            continue
+        lower = text.casefold()
+        if any(keyword in lower for keyword in _LOGIN_ERROR_KEYWORDS):
+            return text
+    return None
+
+
 class WolflinkTokenAuth:
     """Patched TokenAuth with robust token extraction and retries."""
 
@@ -81,10 +112,14 @@ class WolflinkTokenAuth:
                 "lang": "de-DE",
             },
         )
+        if verification_response.status_code >= 400:
+            raise InvalidAuth(
+                f"login_page_http_{verification_response.status_code}"
+            )
 
         verification_token = _extract_verification_token(verification_response.text)
         if not verification_token:
-            raise InvalidAuth
+            raise InvalidAuth("missing_verification_token")
 
         login_response = await client.post(
             url=f"{constants.AUTHENTICATION_BASE_URL}/Account/Login",
@@ -117,13 +152,17 @@ class WolflinkTokenAuth:
 
         code = _extract_authorization_code(login_response)
         if not code:
+            login_error = _extract_login_error(login_response.text)
             _LOGGER.debug(
-                "Missing auth code from Wolf SmartSet login flow. final_url=%s status=%s history=%s",
+                "Missing auth code from Wolf SmartSet login flow. final_url=%s status=%s history=%s login_error=%s",
                 login_response.url,
                 login_response.status_code,
                 [str(item.url) for item in login_response.history],
+                login_error,
             )
-            raise InvalidAuth
+            if login_error:
+                raise InvalidAuth(f"missing_authorization_code: {login_error}")
+            raise InvalidAuth("missing_authorization_code")
 
         token_response = await client.post(
             f"{constants.AUTHENTICATION_BASE_URL}/connect/token",
@@ -147,9 +186,16 @@ class WolflinkTokenAuth:
             },
         )
 
-        json_data = token_response.json()
+        try:
+            json_data = token_response.json()
+        except Exception as err:
+            raise InvalidAuth("token_response_not_json") from err
         if "error" in json_data:
-            raise InvalidAuth
+            error = json_data.get("error")
+            error_description = json_data.get("error_description")
+            if error_description:
+                raise InvalidAuth(f"token_error:{error}:{error_description}")
+            raise InvalidAuth(f"token_error:{error}")
 
         return Tokens(json_data.get("access_token"), json_data.get("expires_in"))
 
@@ -161,14 +207,15 @@ class WolflinkTokenAuth:
             try:
                 return await self._token_once(client)
             except (InvalidAuth, RequestError) as err:
+                err_text = str(err) or err.__class__.__name__
                 if attempt >= len(_RETRY_DELAYS) + 1:
-                    _LOGGER.error("An error occurred: %s", err)
+                    _LOGGER.error("An error occurred: %s", err_text)
                     raise InvalidAuth from err
                 _LOGGER.debug(
                     "Authentication retry %s/%s after error: %s",
                     attempt,
                     len(_RETRY_DELAYS) + 1,
-                    err,
+                    err_text,
                 )
             except Exception as err:  # pragma: no cover - safety net
                 _LOGGER.error("An error occurred: %s", err)
