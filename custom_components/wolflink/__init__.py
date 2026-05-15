@@ -46,11 +46,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WolflinkConfigEntry) -> 
     async with async_auth_guard(hass, username):
         parameters = await fetch_parameters_init(wolf_client, gateway_id, device_id)
 
-        coordinator = WolfLinkCoordinator(
-            hass, entry, wolf_client, parameters, gateway_id, device_id
-        )
+    coordinator = WolfLinkCoordinator(
+        hass, entry, wolf_client, parameters, gateway_id, device_id
+    )
 
-        await coordinator.async_config_entry_first_refresh()
+    await coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = coordinator
 

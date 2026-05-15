@@ -11,6 +11,7 @@ from wolf_comm.wolf_client import WolfClient
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.helpers.httpx_client import create_async_httpx_client
 
 from .rate_limit import async_auth_guard
 from .const import DEVICE_GATEWAY, DEVICE_ID, DEVICE_NAME, DOMAIN
@@ -45,7 +46,11 @@ class WolfLinkConfigFlow(ConfigFlow, domain=DOMAIN):
             username = user_input[CONF_USERNAME]
             password = user_input[CONF_PASSWORD]
             wolf_client = WolfClient(
-                username, password
+                username,
+                password,
+                client=create_async_httpx_client(
+                    hass=self.hass, verify_ssl=False, timeout=20
+                ),
             )
             try:
                 async with async_auth_guard(self.hass, username):
