@@ -4,7 +4,7 @@ import logging
 import re
 
 from httpx import RequestError
-from wolf_comm.models import ListItemParameter
+from wolf_comm.models import ListItemParameter, Parameter
 from wolf_comm.token_auth import InvalidAuth
 from wolf_comm.wolf_client import ParameterWriteError, WriteFailed
 
@@ -46,12 +46,12 @@ def _normalize_words(text: str) -> set[str]:
     return {word for word in cleaned.split() if word}
 
 
-def _display_name(parameter: ListItemParameter) -> str:
+def _display_name(parameter: Parameter) -> str:
     """Return display name for parameter."""
     return f"{parameter.parent} {parameter.name}".strip()
 
 
-def _is_expert_parameter(parameter: ListItemParameter) -> bool:
+def _is_expert_parameter(parameter: Parameter) -> bool:
     """Return true if parameter looks like expert/installer level."""
     combined = f"{parameter.parent} {parameter.name}".casefold()
     return (
@@ -63,36 +63,59 @@ def _is_expert_parameter(parameter: ListItemParameter) -> bool:
 
 
 def _select_preferred_parameter(
-    group: list[ListItemParameter],
-) -> ListItemParameter:
+    group: list[Parameter],
+) -> Parameter:
     """Pick the best candidate from duplicate parameters."""
     return _sorted_candidates(group)[0]
 
 
 def _sorted_candidates(
-    parameters: list[ListItemParameter],
-) -> list[ListItemParameter]:
+    parameters: list[Parameter],
+) -> list[Parameter]:
     """Return candidates sorted by preference."""
     return sorted(
         parameters,
         key=lambda parameter: (
             _is_expert_parameter(parameter),  # Prefer non-expert variant.
+            isinstance(parameter, ListItemParameter),  # Prefer simple parameters.
             0 if str(parameter.bundle_id).isdigit() else 1,
             parameter.parameter_id,
         ),
     )
 
 
-def _is_one_time_hot_water(parameter: ListItemParameter) -> bool:
+def _is_one_time_hot_water(parameter: Parameter) -> bool:
     """Return if parameter can trigger one-time hot water."""
     if parameter.read_only:
         return False
-    combined = f"{parameter.parent} {parameter.name}".casefold()
-    return "warmwasser" in combined and "1x" in combined
+    combined = f"{parameter.parent} {parameter.name}"
+    combined_lower = combined.casefold()
+    words = _normalize_words(combined)
+
+    is_water_related = (
+        "warmwasser" in combined_lower
+        or "trinkwasser" in combined_lower
+        or "dhw" in words
+        or ("hot" in words and "water" in words)
+    )
+    is_one_time_related = (
+        "1x" in combined_lower
+        or "1 x" in combined_lower
+        or "1_x" in combined_lower
+        or "einmal" in combined_lower
+        or "nachladen" in combined_lower
+        or "one" in words
+        or "single" in words
+        or ("1" in words and "x" in words)
+    )
+    return is_water_related and is_one_time_related
 
 
-def _resolve_trigger_value(parameter: ListItemParameter) -> int | str | None:
+def _resolve_trigger_value(parameter: Parameter) -> int | str | None:
     """Resolve the write value that triggers the action."""
+    if not isinstance(parameter, ListItemParameter):
+        return 1
+
     for item in parameter.items:
         if _normalize_words(item.name) & _TRIGGER_MARKERS:
             return item.value
@@ -107,8 +130,11 @@ def _resolve_trigger_value(parameter: ListItemParameter) -> int | str | None:
     return None
 
 
-def _resolve_off_value(parameter: ListItemParameter) -> int | str | None:
+def _resolve_off_value(parameter: Parameter) -> int | str | None:
     """Resolve the write value that deactivates the trigger."""
+    if not isinstance(parameter, ListItemParameter):
+        return 0
+
     for item in parameter.items:
         if _normalize_words(item.name) & _OFF_MARKERS:
             return item.value
@@ -133,12 +159,10 @@ async def async_setup_entry(
     coordinator = config_entry.runtime_data
 
     raw_parameters = [
-        parameter
-        for parameter in coordinator.parameters
-        if isinstance(parameter, ListItemParameter) and _is_one_time_hot_water(parameter)
+        parameter for parameter in coordinator.parameters if _is_one_time_hot_water(parameter)
     ]
 
-    grouped_by_name: dict[str, list[ListItemParameter]] = {}
+    grouped_by_name: dict[str, list[Parameter]] = {}
     for parameter in raw_parameters:
         key = _display_name(parameter).casefold()
         grouped_by_name.setdefault(key, []).append(parameter)
@@ -195,8 +219,8 @@ class WolfLinkOneTimeHotWaterButton(
     def __init__(
         self,
         coordinator: WolfLinkCoordinator,
-        parameter: ListItemParameter,
-        candidates: list[ListItemParameter],
+        parameter: Parameter,
+        candidates: list[Parameter],
         device_id: int,
         trigger_value: int | str,
     ) -> None:
@@ -225,7 +249,9 @@ class WolfLinkOneTimeHotWaterButton(
             "candidate_items": {
                 str(candidate.parameter_id): [
                     {"name": item.name, "value": str(item.value)}
-                    for item in candidate.items
+                    for item in (
+                        candidate.items if isinstance(candidate, ListItemParameter) else []
+                    )
                 ]
                 for candidate in self._candidates
             },
