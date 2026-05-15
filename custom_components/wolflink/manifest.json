@@ -1,10 +1,10 @@
 {
   "domain": "wolflink",
   "name": "Wolf Smartset HACS",
-  "codeowners": ["@adamkrol93", "@EnjoyingM"],
+  "codeowners": ["@felixroedl1"],
   "config_flow": true,
   "documentation": "https://www.home-assistant.io/integrations/wolflink",
-  "issue_tracker": "https://github.com/adamkrol93/ha-wolflink/issues",
+  "issue_tracker": "https://github.com/felixroedl1/ha-wolflink/issues",
   "integration_type": "device",
   "iot_class": "cloud_polling",
   "loggers": ["wolf_comm"],
