@@ -9,11 +9,13 @@ from wolf_comm.token_auth import InvalidAuth
 from wolf_comm.wolf_client import FetchFailed, ParameterReadError, WolfClient
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DOMAIN
+from .rate_limit import async_auth_guard
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,29 +48,31 @@ class WolfLinkCoordinator(DataUpdateCoordinator[dict[int, tuple[int, str]]]):
         self.parameters = parameters
         self._gateway_id = gateway_id
         self.device_id = device_id
+        self._username = entry.data[CONF_USERNAME]
         self._refetch_parameters = False
 
     async def _async_update_data(self) -> dict[int, tuple[int, str]]:
         """Update all stored entities for Wolf SmartSet."""
         try:
-            if not await self._wolf_client.fetch_system_state_list(
-                self.device_id, self._gateway_id
-            ):
-                self._refetch_parameters = True
-                raise UpdateFailed(
-                    "Could not fetch values from server because device is offline."
-                )
-            if self._refetch_parameters:
-                self.parameters = await fetch_parameters(
-                    self._wolf_client, self._gateway_id, self.device_id
-                )
-                self._refetch_parameters = False
-            values = {
-                v.value_id: v.value
-                for v in await self._wolf_client.fetch_value(
-                    self._gateway_id, self.device_id, self.parameters
-                )
-            }
+            async with async_auth_guard(self.hass, self._username):
+                if not await self._wolf_client.fetch_system_state_list(
+                    self.device_id, self._gateway_id
+                ):
+                    self._refetch_parameters = True
+                    raise UpdateFailed(
+                        "Could not fetch values from server because device is offline."
+                    )
+                if self._refetch_parameters:
+                    self.parameters = await fetch_parameters(
+                        self._wolf_client, self._gateway_id, self.device_id
+                    )
+                    self._refetch_parameters = False
+                values = {
+                    v.value_id: v.value
+                    for v in await self._wolf_client.fetch_value(
+                        self._gateway_id, self.device_id, self.parameters
+                    )
+                }
             return {
                 parameter.parameter_id: (
                     parameter.value_id,
@@ -97,12 +101,13 @@ class WolfLinkCoordinator(DataUpdateCoordinator[dict[int, tuple[int, str]]]):
 
     async def async_write_parameter_value(self, parameter: Parameter, value: int) -> None:
         """Write a new value for a parameter."""
-        await self._wolf_client.write_value(
-            self._gateway_id,
-            self.device_id,
-            parameter.bundle_id,
-            {"ValueId": parameter.value_id, "State": str(value)},
-        )
+        async with async_auth_guard(self.hass, self._username):
+            await self._wolf_client.write_value(
+                self._gateway_id,
+                self.device_id,
+                parameter.bundle_id,
+                {"ValueId": parameter.value_id, "State": str(value)},
+            )
 
 
 async def fetch_parameters(

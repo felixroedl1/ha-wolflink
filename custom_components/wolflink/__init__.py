@@ -14,6 +14,7 @@ from homeassistant.helpers.httpx_client import create_async_httpx_client
 
 from .const import DEVICE_GATEWAY, DEVICE_ID, DEVICE_NAME, DOMAIN
 from .coordinator import WolflinkConfigEntry, WolfLinkCoordinator, fetch_parameters
+from .rate_limit import async_auth_guard
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,13 +42,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: WolflinkConfigEntry) -> 
         client=create_async_httpx_client(hass=hass, verify_ssl=False, timeout=20),
     )
 
-    parameters = await fetch_parameters_init(wolf_client, gateway_id, device_id)
+    async with async_auth_guard(hass, username):
+        parameters = await fetch_parameters_init(wolf_client, gateway_id, device_id)
 
-    coordinator = WolfLinkCoordinator(
-        hass, entry, wolf_client, parameters, gateway_id, device_id
-    )
+        coordinator = WolfLinkCoordinator(
+            hass, entry, wolf_client, parameters, gateway_id, device_id
+        )
 
-    await coordinator.async_config_entry_first_refresh()
+        await coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = coordinator
 
