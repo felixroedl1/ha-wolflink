@@ -27,9 +27,43 @@ def _normalize_words(text: str) -> set[str]:
     return {word for word in cleaned.split() if word}
 
 
+def _normalize_label(text: str | None) -> str:
+    """Normalize text for robust label/signature comparisons."""
+    if text is None:
+        return ""
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", text.casefold())).strip()
+
+
 def _display_name(parameter: ListItemParameter) -> str:
     """Return display name for parameter."""
-    return f"{parameter.parent} {parameter.name}".strip()
+    parent = str(parameter.parent).strip() if parameter.parent is not None else ""
+    if parent.casefold() == "none":
+        parent = ""
+    return f"{parent} {parameter.name}".strip()
+
+
+def _parameter_context(parameter: ListItemParameter) -> str:
+    """Return rough context for select parameters."""
+    combined = f"{parameter.parent or ''} {parameter.name}"
+    combined_lower = combined.casefold()
+    words = _normalize_words(combined)
+
+    if (
+        "warmwasser" in combined_lower
+        or "trinkwasser" in combined_lower
+        or "dhw" in words
+        or ("hot" in words and "water" in words)
+    ):
+        return "warmwasser"
+    if "heizung" in combined_lower or "heating" in words or "heizkreis" in combined_lower:
+        return "heizung"
+    return "unknown"
+
+
+def _option_signature(parameter: ListItemParameter) -> tuple[str, ...]:
+    """Return normalized option signature."""
+    options = (_normalize_label(item.name) for item in parameter.items)
+    return tuple(sorted(option for option in options if option))
 
 
 def _is_expert_parameter(parameter: ListItemParameter) -> bool:
@@ -165,8 +199,30 @@ async def async_setup_entry(
         if isinstance(parameter, ListItemParameter) and _is_program_select(parameter)
     ]
 
-    grouped_by_name: dict[str, list[ListItemParameter]] = {}
+    specific_signatures = {
+        _option_signature(parameter)
+        for parameter in raw_parameters
+        if _parameter_context(parameter) != "unknown"
+    }
+
+    filtered_parameters: list[ListItemParameter] = []
     for parameter in raw_parameters:
+        context = _parameter_context(parameter)
+        signature = _option_signature(parameter)
+        if context == "unknown" and signature in specific_signatures:
+            _LOGGER.debug(
+                "Skipping generic select duplicate: name=%s parent=%s parameter_id=%s value_id=%s options=%s",
+                parameter.name,
+                parameter.parent,
+                parameter.parameter_id,
+                parameter.value_id,
+                [item.name for item in parameter.items],
+            )
+            continue
+        filtered_parameters.append(parameter)
+
+    grouped_by_name: dict[str, list[ListItemParameter]] = {}
+    for parameter in filtered_parameters:
         key = _display_name(parameter).casefold()
         grouped_by_name.setdefault(key, []).append(parameter)
 
