@@ -9,6 +9,7 @@ from wolf_comm.wolf_client import WolfClient
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.httpx_client import create_async_httpx_client
 
+from .auth import WolflinkTokenAuth
 from .const import DOMAIN
 
 _ACCOUNT_CLIENTS = "account_clients"
@@ -68,6 +69,7 @@ def _build_account_client(
         password,
         client=create_async_httpx_client(hass=hass, verify_ssl=False, timeout=20),
     )
+    wolf_client.token_auth = WolflinkTokenAuth(username, password)
     return AccountClient(
         username=username,
         password=password,
