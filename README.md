@@ -17,6 +17,7 @@ Diese Integration basiert auf der offiziellen Home-Assistant-Integration `homeas
 - Schreibzugriff auf relevante WOLF-Parameter ueber `number`, `select`, `switch`, `button`
 - Robuster Write-Pfad mit Bundle-Fallback fuer SmartSet-API-Inkonsistenzen
 - Einheitliches Entitaets-Prefix pro Geraet (`wolflink_<geraet>_...`)
+- Automatische De-/Aktivierung nicht mehr passender Entitaeten bei Wechsel zwischen Normal- und Fachmann-Modus
 
 ## Voraussetzungen
 
@@ -81,6 +82,7 @@ Ist der Modus aktiv, werden die erweiterten Parameter ueber die SmartSet-API gel
 - Zeitprogramm-Selects (Heizung/Warmwasser) entfernt, um inaktive bzw. nicht zuverlaessig schaltbare Entitaeten zu vermeiden.
 - Fachmann-Modus inkl. PIN-Eingabe im Setup und in den Optionen verfuegbar.
 - Entitaetsnamen und Prefix-Verhalten vereinheitlicht.
+- Beim Umschalten Normal/Fachmann werden nicht mehr passende Entitaeten automatisch deaktiviert und passende wieder aktiviert.
 
 ## Bekannte Einschraenkungen
 
