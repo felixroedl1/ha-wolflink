@@ -209,9 +209,9 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 )
         hass.config_entries.async_update_entry(entry, minor_version=2)
 
-    if entry.version == 1 and entry.minor_version < 3:
+    if entry.version == 1 and entry.minor_version < 4:
         _migrate_entity_prefixes(hass, entry)
-        hass.config_entries.async_update_entry(entry, minor_version=3)
+        hass.config_entries.async_update_entry(entry, minor_version=4)
 
     return True
 

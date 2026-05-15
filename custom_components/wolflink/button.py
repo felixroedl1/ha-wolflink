@@ -156,6 +156,7 @@ class WolfLinkOneTimeHotWaterButton(
     CoordinatorEntity[WolfLinkCoordinator], ButtonEntity
 ):
     """Button to trigger one-time hot water."""
+    _attr_has_entity_name = True
 
     def __init__(
         self,

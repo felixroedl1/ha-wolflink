@@ -127,6 +127,7 @@ class WolfLinkWarmwaterSetpointNumber(
     CoordinatorEntity[WolfLinkCoordinator], NumberEntity
 ):
     """Writable Wolf setpoint number."""
+    _attr_has_entity_name = True
 
     def __init__(
         self,

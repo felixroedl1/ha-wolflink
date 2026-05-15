@@ -149,6 +149,7 @@ async def async_setup_entry(
 
 class WolfLinkProgramSelect(CoordinatorEntity[WolfLinkCoordinator], SelectEntity):
     """Writable program select entity."""
+    _attr_has_entity_name = True
 
     def __init__(
         self,

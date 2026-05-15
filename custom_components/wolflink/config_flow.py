@@ -108,7 +108,7 @@ class WolfLinkConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Wolf SmartSet Service."""
 
     VERSION = 1
-    MINOR_VERSION = 3
+    MINOR_VERSION = 4
 
     fetched_systems: dict[str, Device]
 

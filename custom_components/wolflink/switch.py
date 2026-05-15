@@ -118,6 +118,7 @@ async def async_setup_entry(
 
 class WolfLinkModeSwitch(CoordinatorEntity[WolfLinkCoordinator], SwitchEntity):
     """Writable party/holiday mode switch."""
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -132,7 +133,7 @@ class WolfLinkModeSwitch(CoordinatorEntity[WolfLinkCoordinator], SwitchEntity):
         self.parameter = parameter
         self._on_value = str(on_value)
         self._off_value = str(off_value)
-        self._attr_name = f"{parameter.parent} {parameter.name}"
+        self._attr_name = f"{parameter.parent} {parameter.name}".strip()
         self._attr_unique_id = f"{device_id}:{parameter.parameter_id}:switch"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, str(device_id))},
