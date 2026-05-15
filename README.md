@@ -2,7 +2,7 @@
 
 Home Assistant Custom Integration fuer WOLF SmartSet.
 
-Version: `0.1.0.0`
+Version: `0.2.0.0`
 
 ## Hinweis zum Ursprung
 
@@ -11,10 +11,12 @@ Diese Integration basiert auf der offiziellen Home-Assistant-Integration `homeas
 ## Features
 
 - Config Flow in Home Assistant UI (Benutzername + Passwort + optional Fachmann-Modus, danach Geraeteauswahl)
+- Options Flow zur nachtraeglichen Aenderung von Fachmann-Modus und PIN
 - Automatisches Anlegen von Sensoren fuer verfuegbare Parameter
 - Polling-Intervall: 60 Sekunden
 - Schreibzugriff auf relevante WOLF-Parameter ueber `number`, `select`, `switch`, `button`
 - Robuster Write-Pfad mit Bundle-Fallback fuer SmartSet-API-Inkonsistenzen
+- Einheitliches Entitaets-Prefix pro Geraet (`wolflink_<geraet>_...`)
 
 ## Voraussetzungen
 
@@ -51,9 +53,7 @@ Es werden Sensoren fuer verfuegbare Parameter erzeugt, unter anderem fuer Temper
 ### Select
 
 - Heizung Programmwahl
-- Heizung Zeitprogramm
 - Warmwasser Programmwahl
-- Warmwasser Zeitprogramm
 
 ### Switch
 
@@ -73,6 +73,14 @@ Der Fachmann-Modus kann beim Setup aktiviert oder spaeter unter den Integrations
 - Standard PIN: `1111` (vorbelegt)
 
 Ist der Modus aktiv, werden die erweiterten Parameter ueber die SmartSet-API geladen. Verfuegbarkeit und Schreibbarkeit haengen weiterhin vom gelieferten Parameterumfang der SmartSet-API und der Anlage/Firmware ab.
+
+## Version 0.2.0.0
+
+- Version auf `0.2.0.0` angehoben.
+- Doppelte/generische `select`-Entitaeten fuer Programmwahl bereinigt.
+- Zeitprogramm-Selects (Heizung/Warmwasser) entfernt, um inaktive bzw. nicht zuverlaessig schaltbare Entitaeten zu vermeiden.
+- Fachmann-Modus inkl. PIN-Eingabe im Setup und in den Optionen verfuegbar.
+- Entitaetsnamen und Prefix-Verhalten vereinheitlicht.
 
 ## Bekannte Einschraenkungen
 

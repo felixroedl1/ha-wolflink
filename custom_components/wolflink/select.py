@@ -147,6 +147,25 @@ def _is_program_select(parameter: ListItemParameter) -> bool:
     )
 
 
+def _is_time_program_select(parameter: ListItemParameter) -> bool:
+    """Return true if the select is a time-program selector."""
+    combined = f"{parameter.parent or ''} {parameter.name}"
+    combined_lower = combined.casefold()
+    words = _normalize_words(combined)
+    option_words = _normalize_words(" ".join(item.name for item in parameter.items))
+
+    has_time_program_name = (
+        "zeitprogramm" in combined_lower
+        or "time program" in combined_lower
+        or ("time" in words and "program" in words)
+    )
+    has_time_program_options = (
+        ("zeitprogramm" in option_words or ("time" in option_words and "program" in option_words))
+        and any(token in option_words for token in {"1", "2", "3"})
+    )
+    return has_time_program_name or has_time_program_options
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: WolflinkConfigEntry,
@@ -193,11 +212,22 @@ async def async_setup_entry(
                 [item.name for item in parameter.items],
             )
 
-    raw_parameters = [
-        parameter
-        for parameter in coordinator.parameters
-        if isinstance(parameter, ListItemParameter) and _is_program_select(parameter)
-    ]
+    raw_parameters = []
+    for parameter in coordinator.parameters:
+        if not isinstance(parameter, ListItemParameter):
+            continue
+        if not _is_program_select(parameter):
+            continue
+        if _is_time_program_select(parameter):
+            _LOGGER.debug(
+                "Skipping time-program select parameter: name=%s parent=%s parameter_id=%s value_id=%s",
+                parameter.name,
+                parameter.parent,
+                parameter.parameter_id,
+                parameter.value_id,
+            )
+            continue
+        raw_parameters.append(parameter)
 
     specific_signatures = {
         _option_signature(parameter)
