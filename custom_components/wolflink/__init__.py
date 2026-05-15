@@ -3,6 +3,7 @@
 import logging
 
 from httpx import RequestError
+from wolf_comm.token_auth import InvalidAuth
 from wolf_comm.wolf_client import FetchFailed, WolfClient
 
 from homeassistant.config_entries import ConfigEntry
@@ -93,6 +94,10 @@ async def fetch_parameters_init(client: WolfClient, gateway_id: int, device_id: 
     """Fetch all available parameters with usage of WolfClient but handles all exceptions and results in ConfigEntryNotReady."""
     try:
         return await fetch_parameters(client, gateway_id, device_id)
+    except InvalidAuth as exception:
+        raise ConfigEntryNotReady(
+            "Authentication temporary failed (Wolf portal unavailable or rate limited)."
+        ) from exception
     except (FetchFailed, RequestError) as exception:
         raise ConfigEntryNotReady(
             f"Error communicating with API: {exception}"

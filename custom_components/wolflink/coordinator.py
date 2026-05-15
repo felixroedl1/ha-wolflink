@@ -11,7 +11,6 @@ from wolf_comm.wolf_client import FetchFailed, ParameterReadError, WolfClient
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_USERNAME
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DOMAIN
@@ -95,9 +94,7 @@ class WolfLinkCoordinator(DataUpdateCoordinator[dict[int, tuple[int, str]]]):
                 "Could not fetch values for parameter. Refreshing value IDs."
             ) from exception
         except InvalidAuth as exception:
-            raise ConfigEntryAuthFailed(
-                "Invalid authentication during update."
-            ) from exception
+            raise UpdateFailed("Invalid authentication during update.") from exception
 
     async def async_write_parameter_value(self, parameter: Parameter, value: int) -> None:
         """Write a new value for a parameter."""
