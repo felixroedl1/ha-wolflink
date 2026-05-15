@@ -113,7 +113,9 @@ class WolfLinkCoordinator(DataUpdateCoordinator[dict[int, tuple[int, str]]]):
         except InvalidAuth as exception:
             raise UpdateFailed("Invalid authentication during update.") from exception
 
-    async def async_write_parameter_value(self, parameter: Parameter, value: int) -> None:
+    async def async_write_parameter_value(
+        self, parameter: Parameter, value: int | float | str
+    ) -> None:
         """Write a new value for a parameter."""
         try:
             parameter_bundle_id = int(parameter.bundle_id)

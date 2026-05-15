@@ -53,6 +53,14 @@ def _is_warmwater_setpoint(parameter: Parameter) -> bool:
     return has_warmwater and has_setpoint
 
 
+def _is_heating_setpoint_correction(parameter: Parameter) -> bool:
+    """Return if parameter is a writable heating setpoint correction."""
+    if not isinstance(parameter, Temperature) or parameter.read_only:
+        return False
+    combined = f"{parameter.parent} {parameter.name}".casefold()
+    return "heizung" in combined and "sollwertkorrektur" in combined
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: WolflinkConfigEntry,
@@ -62,7 +70,10 @@ async def async_setup_entry(
     coordinator = config_entry.runtime_data
 
     matching_parameters = [
-        parameter for parameter in coordinator.parameters if _is_warmwater_setpoint(parameter)
+        parameter
+        for parameter in coordinator.parameters
+        if _is_warmwater_setpoint(parameter)
+        or _is_heating_setpoint_correction(parameter)
     ]
     _LOGGER.debug(
         "Discovered %s writable warmwater setpoint parameters: %s",
@@ -89,7 +100,7 @@ async def async_setup_entry(
 class WolfLinkWarmwaterSetpointNumber(
     CoordinatorEntity[WolfLinkCoordinator], NumberEntity
 ):
-    """Writable warmwater setpoint number."""
+    """Writable Wolf setpoint number."""
 
     def __init__(
         self,
@@ -100,14 +111,20 @@ class WolfLinkWarmwaterSetpointNumber(
         """Initialize the warmwater setpoint number."""
         super().__init__(coordinator)
         self.parameter = parameter
+        self._is_heating_correction = _is_heating_setpoint_correction(parameter)
         self._attr_name = f"{parameter.parent} {parameter.name}"
         self._attr_unique_id = f"{device_id}:{parameter.parameter_id}:setpoint"
         self._attr_device_class = NumberDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_mode = NumberMode.BOX
-        self._attr_native_min_value = 20
-        self._attr_native_max_value = 75
-        self._attr_native_step = 1
+        if self._is_heating_correction:
+            self._attr_native_min_value = -10
+            self._attr_native_max_value = 10
+            self._attr_native_step = 0.5
+        else:
+            self._attr_native_min_value = 20
+            self._attr_native_max_value = 75
+            self._attr_native_step = 1
         self._value: float | None = None
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, str(device_id))},
@@ -145,7 +162,11 @@ class WolfLinkWarmwaterSetpointNumber(
 
     async def async_set_native_value(self, value: float) -> None:
         """Set a new warmwater setpoint."""
-        write_value = round(value)
+        write_value: int | float
+        if self._is_heating_correction:
+            write_value = round(value, 1)
+        else:
+            write_value = round(value)
         if self.parameter.value_id is None:
             raise HomeAssistantError("No value_id available for warmwater setpoint.")
 

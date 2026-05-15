@@ -19,7 +19,13 @@ from .rate_limit import async_auth_guard
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.SENSOR, Platform.NUMBER]
+PLATFORMS = [
+    Platform.SENSOR,
+    Platform.NUMBER,
+    Platform.SELECT,
+    Platform.SWITCH,
+    Platform.BUTTON,
+]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: WolflinkConfigEntry) -> bool:
