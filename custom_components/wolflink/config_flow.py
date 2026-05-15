@@ -11,6 +11,7 @@ from wolf_comm.wolf_client import WolfClient
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.helpers import selector
 from homeassistant.helpers.httpx_client import create_async_httpx_client
 
 from .rate_limit import async_auth_guard
@@ -19,7 +20,20 @@ from .const import DEVICE_GATEWAY, DEVICE_ID, DEVICE_NAME, DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 USER_SCHEMA = vol.Schema(
-    {vol.Required(CONF_USERNAME): str, vol.Required(CONF_PASSWORD): str}
+    {
+        vol.Required(CONF_USERNAME): selector.TextSelector(
+            selector.TextSelectorConfig(
+                type=selector.TextSelectorType.TEXT,
+                autocomplete="username",
+            )
+        ),
+        vol.Required(CONF_PASSWORD): selector.TextSelector(
+            selector.TextSelectorConfig(
+                type=selector.TextSelectorType.PASSWORD,
+                autocomplete="current-password",
+            )
+        ),
+    }
 )
 
 

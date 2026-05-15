@@ -2,25 +2,26 @@
 
 Home Assistant Custom Integration fuer WOLF SmartSet.
 
-Die Integration verbindet dein WOLF SmartSet Konto mit Home Assistant, legt Sensoren fuer verfuegbare Parameter an und bietet schreibbare Warmwasser-Solltemperatur-Entitaeten als `number`.
+Version: `0.1.0.0`
+
+## Hinweis zum Ursprung
+
+Diese Integration basiert auf der offiziellen Home-Assistant-Integration `homeassistant/components/wolflink` und wurde fuer HACS sowie zusaetzliche Einstellmoeglichkeiten erweitert und angepasst.
 
 ## Features
 
 - Config Flow in Home Assistant UI (Benutzername + Passwort, danach Geraeteauswahl)
 - Automatisches Anlegen von Sensoren fuer verfuegbare Parameter
-- Zustands-Mapping fuer List-Parameter (z. B. `Auto`, `Standby`, `Stoerung`)
-- Schreibbare Warmwasser-Solltemperatur als Number-Entitaet
 - Polling-Intervall: 60 Sekunden
+- Schreibzugriff auf relevante WOLF-Parameter ueber `number`, `select`, `switch`, `button`
+- Robuster Write-Pfad mit Bundle-Fallback fuer SmartSet-API-Inkonsistenzen
 
 ## Voraussetzungen
 
 - Home Assistant mit Unterstuetzung fuer Custom Integrations
 - WOLF SmartSet Konto
 - Internetzugriff auf die WOLF Cloud
-
-Abhaengigkeit der Integration:
-
-- `wolf-comm==0.0.48`
+- Abhaengigkeit: `wolf-comm==0.0.48`
 
 ## Installation mit HACS
 
@@ -28,70 +29,61 @@ Abhaengigkeit der Integration:
 2. Dieses Repository als `Integration` hinzufuegen.
 3. `Wolf Smartset HACS` in HACS installieren.
 4. Home Assistant neu starten.
-5. Integration in Home Assistant hinzufuegen:
-   - Einstellungen -> Geraete & Dienste -> Integration hinzufuegen -> `Wolf Smartset HACS`
+5. Integration in Home Assistant hinzufuegen unter Einstellungen -> Geraete & Dienste.
 
 ## Manuelle Installation
 
 1. Ordner `custom_components/wolflink` nach `<config>/custom_components/wolflink` kopieren.
 2. Home Assistant neu starten.
-3. Integration ueber UI hinzufuegen (Einstellungen -> Geraete & Dienste).
+3. Integration ueber UI hinzufuegen.
 
-## Konfiguration
-
-Beim Einrichten werden zwei Schritte durchlaufen:
-
-1. SmartSet Zugangsdaten eingeben (`username`, `password`)
-2. Ein Geraet aus der vom Konto gefundenen Geraeteliste auswaehlen
-
-Hinweis: Pro WOLF Geraet wird eine eindeutige Config Entry angelegt.
-
-## Entitaeten
+## Entitaeten und Einstellmoeglichkeiten
 
 ### Sensoren
 
-Fuer die vom API gemeldeten Parameter werden Sensoren erstellt. Unterstuetzte Typen sind unter anderem:
+Es werden Sensoren fuer verfuegbare Parameter erzeugt, unter anderem fuer Temperatur, Druck, Energie, Leistung, Prozent, Laufzeit, Volumenstrom, Frequenz, Drehzahl und Statuswerte.
 
-- Temperatur (`degC`)
-- Druck (`bar`)
-- Energie (`kWh`)
-- Leistung (`kW`)
-- Prozent (`%`)
-- Laufzeit (`h`)
-- Volumenstrom (`L/min`)
-- Frequenz (`Hz`)
-- Drehzahl (`rpm`)
-- Allgemeine Zustands-/Textwerte
+### Number
 
-### Number (schreibbar)
+- Warmwasser Solltemperatur
+- Heizung Sollwertkorrektur
 
-Schreibbare Number-Entitaeten werden nur fuer Warmwasser-Solltemperatur erstellt, wenn der Parameter:
+### Select
 
-- ein Temperatur-Parameter ist
-- nicht read-only ist
-- in Parent/Name die Begriffe `warmwasser` und `solltemperatur` enthaelt
+- Heizung Programmwahl
+- Heizung Zeitprogramm
+- Warmwasser Programmwahl
+- Warmwasser Zeitprogramm
 
-Wertebereich:
+### Switch
 
-- Minimum: `20`
-- Maximum: `75`
-- Schrittweite: `1`
+- Partymodus
+- Urlaubsmodus
+
+### Button
+
+- 1x Warmwasser
+
+## Fachmann-Ebene
+
+Die Fachmann-Ebene ist aktuell nicht vollstaendig als eigener Modus in der Integration umgesetzt. Verfuegbarkeit und Schreibbarkeit haengen vom gelieferten Parameterumfang der SmartSet-API und der Anlage/Firmware ab.
 
 ## Bekannte Einschraenkungen
 
 - Es werden nur vom WOLF API verfuegbare Parameter angezeigt.
 - Der Parameter `Reglertyp` wird absichtlich ausgefiltert.
-- Bei Schreibfehlern (API/Netzwerk/Auth) wird der Write-Vorgang in Home Assistant mit Fehler beendet.
+- Parameternamen und Struktur koennen je nach Anlagenkonfiguration/Firmware abweichen.
 
 ## Fehlerbehebung
 
-- `cannot_connect`: Verbindung zur WOLF API fehlgeschlagen (Netzwerk/API pruefen)
-- `invalid_auth`: Zugangsdaten ungueltig
-- `no_devices`: Im Konto wurden keine kompatiblen Geraete gefunden
+- `cannot_connect`: Verbindung zur WOLF API fehlgeschlagen.
+- `invalid_auth`: Zugangsdaten ungueltig oder Login auf Portal-Seite abgelehnt.
+- `no_devices`: Im Konto wurden keine kompatiblen Geraete gefunden.
 
-Fuer detaillierte Diagnose in Home Assistant Logs:
+Fuer detaillierte Diagnose:
 
 - Logger: `wolf_comm`
+- Logger: `custom_components.wolflink`
 
 ## Support / Issues
 

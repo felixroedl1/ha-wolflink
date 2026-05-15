@@ -6,7 +6,7 @@
     "error": {
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
       "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
-      "no_devices": "No devices found in your account",
+      "no_devices": "Keine Geraete im SmartSet-Konto gefunden",
       "unknown": "[%key:common::config_flow::error::unknown%]"
     },
     "step": {
@@ -14,14 +14,14 @@
         "data": {
           "device_id": "[%key:common::config_flow::data::device%]"
         },
-        "title": "Select WOLF device"
+        "title": "WOLF Geraet auswaehlen"
       },
       "user": {
         "data": {
-          "password": "[%key:common::config_flow::data::password%]",
-          "username": "[%key:common::config_flow::data::username%]"
+          "password": "SmartSet Passwort",
+          "username": "SmartSet Benutzername"
         },
-        "title": "WOLF SmartSet connection"
+        "title": "WOLF SmartSet Anmeldung"
       }
     }
   },
