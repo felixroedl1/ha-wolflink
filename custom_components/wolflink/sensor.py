@@ -44,6 +44,11 @@ from .const import DOMAIN, MANUFACTURER, STATES
 from .coordinator import WolflinkConfigEntry, WolfLinkCoordinator
 
 
+def _display_name(parameter: Parameter) -> str:
+    """Return display name for parameter."""
+    return f"{parameter.parent} {parameter.name}".strip()
+
+
 def get_listitem_resolve_state(wolf_object, state):
     """Resolve list item state."""
     resolved_state = [item for item in wolf_object.items if item.value == int(state)]
@@ -150,6 +155,7 @@ class WolfLinkSensor(CoordinatorEntity[WolfLinkCoordinator], SensorEntity):
     """Base class for all Wolf entities."""
 
     entity_description: WolflinkSensorEntityDescription
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -162,7 +168,7 @@ class WolfLinkSensor(CoordinatorEntity[WolfLinkCoordinator], SensorEntity):
         super().__init__(coordinator)
         self.entity_description = description
         self.wolf_object = wolf_object
-        self._attr_name = wolf_object.name
+        self._attr_name = _display_name(wolf_object)
         self._attr_unique_id = f"{device_id}:{wolf_object.parameter_id}"
         self._state: str | None = None
         self._attr_device_info = DeviceInfo(
