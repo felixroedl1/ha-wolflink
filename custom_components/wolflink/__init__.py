@@ -1,6 +1,7 @@
 """The Wolf SmartSet Service integration."""
 
 import logging
+from functools import partial
 
 from httpx import RequestError
 from wolf_comm.token_auth import InvalidAuth
@@ -13,7 +14,14 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.httpx_client import create_async_httpx_client
 
-from .const import DEVICE_GATEWAY, DEVICE_ID, DEVICE_NAME, DOMAIN
+from .const import (
+    CONF_EXPERT_MODE,
+    CONF_EXPERT_PASSWORD,
+    DEVICE_GATEWAY,
+    DEVICE_ID,
+    DEVICE_NAME,
+    DOMAIN,
+)
 from .coordinator import WolflinkConfigEntry, WolfLinkCoordinator, fetch_parameters
 from .rate_limit import async_auth_guard
 
@@ -26,6 +34,24 @@ PLATFORMS = [
     Platform.SWITCH,
     Platform.BUTTON,
 ]
+
+
+def _get_entry_setting(entry: ConfigEntry, key: str, default=None):
+    """Return config setting preferring options over stored entry data."""
+    if key in entry.options:
+        return entry.options[key]
+    return entry.data.get(key, default)
+
+
+def _resolve_expert_mode(entry: ConfigEntry) -> bool | str:
+    """Resolve expert mode value for wolf_comm."""
+    expert_mode = bool(_get_entry_setting(entry, CONF_EXPERT_MODE, False))
+    expert_password = _get_entry_setting(entry, CONF_EXPERT_PASSWORD)
+    if not expert_mode:
+        return False
+    if isinstance(expert_password, str) and expert_password.strip():
+        return expert_password.strip()
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: WolflinkConfigEntry) -> bool:
@@ -42,11 +68,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: WolflinkConfigEntry) -> 
         device_id,
         gateway_id,
     )
+    expert_mode = _resolve_expert_mode(entry)
+    httpx_client = await hass.async_add_executor_job(
+        partial(
+            create_async_httpx_client,
+            hass=hass,
+            verify_ssl=False,
+            timeout=20,
+        )
+    )
 
     wolf_client = WolfClient(
         username,
         password,
-        client=create_async_httpx_client(hass=hass, verify_ssl=False, timeout=20),
+        expert_p=expert_mode,
+        client=httpx_client,
     )
 
     async with async_auth_guard(hass, username):
@@ -59,6 +95,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WolflinkConfigEntry) -> 
     await coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = coordinator
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -68,6 +105,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: WolflinkConfigEntry) -> 
 async def async_unload_entry(hass: HomeAssistant, entry: WolflinkConfigEntry) -> bool:
     """Unload a config entry."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Handle options update."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

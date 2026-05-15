@@ -2,6 +2,9 @@
 
 DOMAIN = "wolflink"
 
+CONF_EXPERT_MODE = "expert_mode"
+CONF_EXPERT_PASSWORD = "expert_password"
+
 DEVICE_ID = "device_id"
 DEVICE_GATEWAY = "device_gateway"
 DEVICE_NAME = "device_name"

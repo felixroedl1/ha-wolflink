@@ -10,7 +10,7 @@ Diese Integration basiert auf der offiziellen Home-Assistant-Integration `homeas
 
 ## Features
 
-- Config Flow in Home Assistant UI (Benutzername + Passwort, danach Geraeteauswahl)
+- Config Flow in Home Assistant UI (Benutzername + Passwort + optional Fachmann-Modus, danach Geraeteauswahl)
 - Automatisches Anlegen von Sensoren fuer verfuegbare Parameter
 - Polling-Intervall: 60 Sekunden
 - Schreibzugriff auf relevante WOLF-Parameter ueber `number`, `select`, `switch`, `button`
@@ -66,7 +66,13 @@ Es werden Sensoren fuer verfuegbare Parameter erzeugt, unter anderem fuer Temper
 
 ## Fachmann-Ebene
 
-Die Fachmann-Ebene ist aktuell nicht vollstaendig als eigener Modus in der Integration umgesetzt. Verfuegbarkeit und Schreibbarkeit haengen vom gelieferten Parameterumfang der SmartSet-API und der Anlage/Firmware ab.
+Der Fachmann-Modus kann beim Setup aktiviert oder spaeter unter den Integrations-Optionen ein-/ausgeschaltet werden.
+
+- Option: `Fachmann-Modus (AN/AUS)`
+- Bei `AN` folgt die PIN-Eingabe
+- Standard PIN: `1111` (vorbelegt)
+
+Ist der Modus aktiv, werden die erweiterten Parameter ueber die SmartSet-API geladen. Verfuegbarkeit und Schreibbarkeit haengen weiterhin vom gelieferten Parameterumfang der SmartSet-API und der Anlage/Firmware ab.
 
 ## Bekannte Einschraenkungen
 

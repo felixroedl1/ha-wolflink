@@ -18,10 +18,35 @@
       },
       "user": {
         "data": {
+          "expert_mode": "Fachmann-Modus (AN/AUS)",
           "password": "SmartSet Passwort",
           "username": "SmartSet Benutzername"
         },
         "title": "WOLF SmartSet Anmeldung"
+      },
+      "expert_pin": {
+        "data": {
+          "expert_password": "Fachmann PIN"
+        },
+        "description": "Standard PIN ist 1111.",
+        "title": "WOLF Fachmann PIN"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "expert_mode": "Fachmann-Modus (AN/AUS)"
+        },
+        "title": "WOLF SmartSet Optionen"
+      },
+      "expert_pin": {
+        "data": {
+          "expert_password": "Fachmann PIN"
+        },
+        "description": "Standard PIN ist 1111.",
+        "title": "WOLF Fachmann PIN"
       }
     }
   },
