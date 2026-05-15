@@ -2,8 +2,17 @@
 
 from datetime import timedelta
 import inspect
+import json
 import logging
 from httpx import RequestError
+from wolf_comm.constants import (
+    BASE_URL_PORTAL,
+    ERROR_CODE,
+    ERROR_MESSAGE,
+    ERROR_READ_PARAMETER,
+    ERROR_TYPE,
+)
+from wolf_comm.helpers import bearer_header
 from wolf_comm.models import Parameter
 from wolf_comm.token_auth import InvalidAuth
 from wolf_comm.wolf_client import (
@@ -114,7 +123,10 @@ class WolfLinkCoordinator(DataUpdateCoordinator[dict[int, tuple[int, str]]]):
             raise UpdateFailed("Invalid authentication during update.") from exception
 
     async def async_write_parameter_value(
-        self, parameter: Parameter, value: int | float | str
+        self,
+        parameter: Parameter,
+        value: int | float | str,
+        prefer_compat_endpoint: bool = False,
     ) -> None:
         """Write a new value for a parameter."""
         try:
@@ -129,28 +141,112 @@ class WolfLinkCoordinator(DataUpdateCoordinator[dict[int, tuple[int, str]]]):
             if bundle_id in tried_bundles:
                 continue
             tried_bundles.add(bundle_id)
-            try:
-                async with async_auth_guard(self.hass, self._username):
-                    await self._wolf_client.write_value(
-                        self._gateway_id,
-                        self.device_id,
+            strategies = (
+                (self._async_write_parameter_value_compat, self._async_write_parameter_value_legacy)
+                if prefer_compat_endpoint
+                else (self._async_write_parameter_value_legacy, self._async_write_parameter_value_compat)
+            )
+            for strategy in strategies:
+                try:
+                    async with async_auth_guard(self.hass, self._username):
+                        await strategy(parameter, value, bundle_id)
+                    return
+                except (ParameterWriteError, WriteFailed, RequestError) as exception:
+                    last_error = exception
+                    _LOGGER.debug(
+                        "Write failed via %s for parameter_id=%s value_id=%s bundle_id=%s: %s",
+                        strategy.__name__,
+                        parameter.parameter_id,
+                        parameter.value_id,
                         bundle_id,
-                        {"ValueId": parameter.value_id, "State": str(value)},
+                        exception,
                     )
-                return
-            except (ParameterWriteError, WriteFailed) as exception:
-                last_error = exception
-                _LOGGER.debug(
-                    "Write failed for parameter_id=%s value_id=%s bundle_id=%s: %s",
-                    parameter.parameter_id,
-                    parameter.value_id,
-                    bundle_id,
-                    exception,
-                )
-                continue
+                    continue
 
         if last_error is not None:
             raise last_error
+
+    async def _async_write_parameter_value_legacy(
+        self,
+        parameter: Parameter,
+        value: int | float | str,
+        bundle_id: int,
+    ) -> None:
+        """Write parameter using legacy WriteParameterValues endpoint."""
+        await self._wolf_client.write_value(
+            self._gateway_id,
+            self.device_id,
+            bundle_id,
+            {"ValueId": parameter.value_id, "State": str(value)},
+        )
+
+    async def _async_write_parameter_value_compat(
+        self,
+        parameter: Parameter,
+        value: int | float | str,
+        bundle_id: int,
+    ) -> None:
+        """Write parameter using /portal/api/portal/parameters/write endpoint."""
+        if (
+            self._wolf_client.tokens is None
+            or self._wolf_client.tokens.is_expired()
+            or self._wolf_client.session_id is None
+        ):
+            await self._wolf_client._WolfClient__authorize_and_session()
+
+        payload = {
+            "SessionId": self._wolf_client.session_id,
+            "BundleId": bundle_id,
+            "GatewayId": self._gateway_id,
+            "SystemId": self.device_id,
+            "WriteParameterValues": [
+                {
+                    "ValueId": parameter.value_id,
+                    "ParameterId": parameter.parameter_id,
+                    "ParameterName": parameter.name,
+                    "Value": str(value),
+                }
+            ],
+            "WaitForResponseTimeout": None,
+            "GuiId": None,
+        }
+        headers = {
+            **bearer_header(self._wolf_client.tokens.access_token),
+            "Content-Type": "application/json",
+        }
+        response = await self._wolf_client.client.request(
+            "post",
+            f"{BASE_URL_PORTAL}/api/portal/parameters/write",
+            json=payload,
+            headers=headers,
+        )
+        body_text = response.text or ""
+        if response.status_code >= 400:
+            raise WriteFailed(
+                f"Compat write HTTP {response.status_code}: {body_text[:500]}"
+            )
+
+        response_data: dict | list
+        try:
+            response_data = response.json()
+        except json.JSONDecodeError as exception:
+            raise WriteFailed(
+                f"Compat write returned non-JSON response: {body_text[:500]}"
+            ) from exception
+
+        if isinstance(response_data, dict) and (
+            ERROR_CODE in response_data or ERROR_TYPE in response_data
+        ):
+            error_msg = (
+                f"Error {response_data.get(ERROR_CODE, '')}: "
+                f"{response_data.get(ERROR_MESSAGE, str(response_data))}"
+            )
+            if (
+                ERROR_MESSAGE in response_data
+                and response_data[ERROR_MESSAGE] == ERROR_READ_PARAMETER
+            ):
+                raise ParameterWriteError(error_msg)
+            raise WriteFailed(error_msg)
 
 
 async def fetch_parameters(

@@ -269,7 +269,9 @@ class WolfLinkOneTimeHotWaterButton(
             try:
                 for sequence_value in write_sequence:
                     await self.coordinator.async_write_parameter_value(
-                        candidate, sequence_value
+                        candidate,
+                        sequence_value,
+                        prefer_compat_endpoint=True,
                     )
             except InvalidAuth as exception:
                 raise HomeAssistantError(
