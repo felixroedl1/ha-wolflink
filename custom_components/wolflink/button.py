@@ -29,6 +29,36 @@ def _normalize_words(text: str) -> set[str]:
     return {word for word in cleaned.split() if word}
 
 
+def _display_name(parameter: ListItemParameter) -> str:
+    """Return display name for parameter."""
+    return f"{parameter.parent} {parameter.name}".strip()
+
+
+def _is_expert_parameter(parameter: ListItemParameter) -> bool:
+    """Return true if parameter looks like expert/installer level."""
+    combined = f"{parameter.parent} {parameter.name}".casefold()
+    return (
+        "fachmann" in combined
+        or "expert" in combined
+        or "installer" in combined
+        or "service" in combined
+    )
+
+
+def _select_preferred_parameter(
+    group: list[ListItemParameter],
+) -> ListItemParameter:
+    """Pick the best candidate from duplicate parameters."""
+    return sorted(
+        group,
+        key=lambda parameter: (
+            _is_expert_parameter(parameter),  # Prefer non-expert variant.
+            0 if str(parameter.bundle_id).isdigit() else 1,
+            parameter.parameter_id,
+        ),
+    )[0]
+
+
 def _is_one_time_hot_water(parameter: ListItemParameter) -> bool:
     """Return if parameter can trigger one-time hot water."""
     if parameter.read_only:
@@ -60,10 +90,30 @@ async def async_setup_entry(
 ) -> None:
     """Set up one-time hot-water trigger buttons."""
     coordinator = config_entry.runtime_data
+
+    raw_parameters = [
+        parameter
+        for parameter in coordinator.parameters
+        if isinstance(parameter, ListItemParameter) and _is_one_time_hot_water(parameter)
+    ]
+
+    grouped_by_name: dict[str, list[ListItemParameter]] = {}
+    for parameter in raw_parameters:
+        key = _display_name(parameter).casefold()
+        grouped_by_name.setdefault(key, []).append(parameter)
+
     entities: list[WolfLinkOneTimeHotWaterButton] = []
-    for parameter in coordinator.parameters:
-        if not isinstance(parameter, ListItemParameter) or not _is_one_time_hot_water(parameter):
-            continue
+    for key, group in grouped_by_name.items():
+        parameter = _select_preferred_parameter(group)
+        if len(group) > 1:
+            _LOGGER.debug(
+                "Resolved duplicate button '%s' -> parameter_id=%s value_id=%s bundle_id=%s from %s candidates",
+                key,
+                parameter.parameter_id,
+                parameter.value_id,
+                parameter.bundle_id,
+                len(group),
+            )
         trigger_value = _resolve_trigger_value(parameter)
         if trigger_value is None:
             _LOGGER.debug(
@@ -110,7 +160,7 @@ class WolfLinkOneTimeHotWaterButton(
         super().__init__(coordinator)
         self.parameter = parameter
         self._trigger_value = str(trigger_value)
-        self._attr_name = f"{parameter.parent} {parameter.name}"
+        self._attr_name = _display_name(parameter)
         self._attr_unique_id = f"{device_id}:{parameter.parameter_id}:button"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, str(device_id))},

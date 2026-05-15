@@ -27,6 +27,36 @@ def _normalize_words(text: str) -> set[str]:
     return {word for word in cleaned.split() if word}
 
 
+def _display_name(parameter: ListItemParameter) -> str:
+    """Return display name for parameter."""
+    return f"{parameter.parent} {parameter.name}".strip()
+
+
+def _is_expert_parameter(parameter: ListItemParameter) -> bool:
+    """Return true if parameter looks like expert/installer level."""
+    combined = f"{parameter.parent} {parameter.name}".casefold()
+    return (
+        "fachmann" in combined
+        or "expert" in combined
+        or "installer" in combined
+        or "service" in combined
+    )
+
+
+def _select_preferred_parameter(
+    group: list[ListItemParameter],
+) -> ListItemParameter:
+    """Pick the best candidate from duplicate parameters."""
+    return sorted(
+        group,
+        key=lambda parameter: (
+            _is_expert_parameter(parameter),  # Prefer non-expert variant.
+            0 if str(parameter.bundle_id).isdigit() else 1,
+            parameter.parameter_id,
+        ),
+    )[0]
+
+
 def _is_program_select(parameter: ListItemParameter) -> bool:
     """Return if parameter is a writable program selection."""
     if parameter.read_only:
@@ -58,11 +88,31 @@ async def async_setup_entry(
 ) -> None:
     """Set up selectable program parameters."""
     coordinator = config_entry.runtime_data
-    matching_parameters = [
+    raw_parameters = [
         parameter
         for parameter in coordinator.parameters
         if isinstance(parameter, ListItemParameter) and _is_program_select(parameter)
     ]
+
+    grouped_by_name: dict[str, list[ListItemParameter]] = {}
+    for parameter in raw_parameters:
+        key = _display_name(parameter).casefold()
+        grouped_by_name.setdefault(key, []).append(parameter)
+
+    matching_parameters: list[ListItemParameter] = []
+    for key, group in grouped_by_name.items():
+        selected = _select_preferred_parameter(group)
+        if len(group) > 1:
+            _LOGGER.debug(
+                "Resolved duplicate select '%s' -> parameter_id=%s value_id=%s bundle_id=%s from %s candidates",
+                key,
+                selected.parameter_id,
+                selected.value_id,
+                selected.bundle_id,
+                len(group),
+            )
+        matching_parameters.append(selected)
+
     _LOGGER.debug(
         "Discovered %s selectable program parameters: %s",
         len(matching_parameters),
@@ -97,7 +147,7 @@ class WolfLinkProgramSelect(CoordinatorEntity[WolfLinkCoordinator], SelectEntity
         """Initialize select entity."""
         super().__init__(coordinator)
         self.parameter = parameter
-        self._attr_name = f"{parameter.parent} {parameter.name}"
+        self._attr_name = _display_name(parameter)
         self._attr_unique_id = f"{device_id}:{parameter.parameter_id}:select"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, str(device_id))},
