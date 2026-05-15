@@ -4,8 +4,10 @@
   "codeowners": ["@adamkrol93", "@EnjoyingM"],
   "config_flow": true,
   "documentation": "https://www.home-assistant.io/integrations/wolflink",
+  "issue_tracker": "https://github.com/adamkrol93/ha-wolflink/issues",
   "integration_type": "device",
   "iot_class": "cloud_polling",
   "loggers": ["wolf_comm"],
-  "requirements": ["wolf-comm==0.0.48"]
+  "requirements": ["wolf-comm==0.0.48"],
+  "version": "0.1.0"
 }
