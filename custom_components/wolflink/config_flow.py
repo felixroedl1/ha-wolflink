@@ -288,16 +288,16 @@ class WolfLinkOptionsFlow(OptionsFlow):
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
+        self._config_entry = config_entry
         self.expert_mode = bool(
-            self.config_entry.options.get(
+            self._config_entry.options.get(
                 CONF_EXPERT_MODE,
-                self.config_entry.data.get(CONF_EXPERT_MODE, False),
+                self._config_entry.data.get(CONF_EXPERT_MODE, False),
             )
         )
-        stored_pin = self.config_entry.options.get(
+        stored_pin = self._config_entry.options.get(
             CONF_EXPERT_PASSWORD,
-            self.config_entry.data.get(CONF_EXPERT_PASSWORD, ""),
+            self._config_entry.data.get(CONF_EXPERT_PASSWORD, ""),
         )
         self.expert_password = str(stored_pin or _DEFAULT_EXPERT_PIN)
 
