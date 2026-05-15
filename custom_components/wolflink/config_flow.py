@@ -7,11 +7,11 @@ from httpcore import ConnectError
 import voluptuous as vol
 from wolf_comm.models import Device
 from wolf_comm.token_auth import InvalidAuth
+from wolf_comm.wolf_client import WolfClient
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 
-from .client import async_get_account_client, async_release_account_client
 from .const import DEVICE_GATEWAY, DEVICE_ID, DEVICE_NAME, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,11 +41,11 @@ class WolfLinkConfigFlow(ConfigFlow, domain=DOMAIN):
         """Handle the initial step to get connection parameters."""
         errors = {}
         if user_input is not None:
-            username = user_input[CONF_USERNAME]
-            password = user_input[CONF_PASSWORD]
-            account_client = async_get_account_client(self.hass, username, password)
+            wolf_client = WolfClient(
+                user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
+            )
             try:
-                systems = await account_client.fetch_system_list()
+                systems = await wolf_client.fetch_system_list()
             except ConnectError:
                 errors["base"] = "cannot_connect"
             except InvalidAuth:
@@ -61,11 +61,9 @@ class WolfLinkConfigFlow(ConfigFlow, domain=DOMAIN):
                     )
 
                 self.fetched_systems = {str(system.id): system for system in systems}
-                self.username = username
-                self.password = password
+                self.username = user_input[CONF_USERNAME]
+                self.password = user_input[CONF_PASSWORD]
                 return await self.async_step_device()
-            finally:
-                async_release_account_client(self.hass, username)
         return self.async_show_form(
             step_id="user", data_schema=USER_SCHEMA, errors=errors
         )

@@ -6,14 +6,13 @@ import logging
 from httpx import RequestError
 from wolf_comm.models import Parameter
 from wolf_comm.token_auth import InvalidAuth
-from wolf_comm.wolf_client import FetchFailed, ParameterReadError
+from wolf_comm.wolf_client import FetchFailed, ParameterReadError, WolfClient
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .client import AccountClient
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,7 +29,7 @@ class WolfLinkCoordinator(DataUpdateCoordinator[dict[int, tuple[int, str]]]):
         self,
         hass: HomeAssistant,
         entry: WolflinkConfigEntry,
-        account_client: AccountClient,
+        wolf_client: WolfClient,
         parameters: list[Parameter],
         gateway_id: int,
         device_id: int,
@@ -43,7 +42,7 @@ class WolfLinkCoordinator(DataUpdateCoordinator[dict[int, tuple[int, str]]]):
             name=DOMAIN,
             update_interval=timedelta(seconds=60),
         )
-        self._account_client = account_client
+        self._wolf_client = wolf_client
         self.parameters = parameters
         self._gateway_id = gateway_id
         self.device_id = device_id
@@ -52,7 +51,7 @@ class WolfLinkCoordinator(DataUpdateCoordinator[dict[int, tuple[int, str]]]):
     async def _async_update_data(self) -> dict[int, tuple[int, str]]:
         """Update all stored entities for Wolf SmartSet."""
         try:
-            if not await self._account_client.fetch_system_state_list(
+            if not await self._wolf_client.fetch_system_state_list(
                 self.device_id, self._gateway_id
             ):
                 self._refetch_parameters = True
@@ -61,12 +60,12 @@ class WolfLinkCoordinator(DataUpdateCoordinator[dict[int, tuple[int, str]]]):
                 )
             if self._refetch_parameters:
                 self.parameters = await fetch_parameters(
-                    self._account_client, self._gateway_id, self.device_id
+                    self._wolf_client, self._gateway_id, self.device_id
                 )
                 self._refetch_parameters = False
             values = {
                 v.value_id: v.value
-                for v in await self._account_client.fetch_value(
+                for v in await self._wolf_client.fetch_value(
                     self._gateway_id, self.device_id, self.parameters
                 )
             }
@@ -98,7 +97,7 @@ class WolfLinkCoordinator(DataUpdateCoordinator[dict[int, tuple[int, str]]]):
 
     async def async_write_parameter_value(self, parameter: Parameter, value: int) -> None:
         """Write a new value for a parameter."""
-        await self._account_client.write_value(
+        await self._wolf_client.write_value(
             self._gateway_id,
             self.device_id,
             parameter.bundle_id,
@@ -107,7 +106,7 @@ class WolfLinkCoordinator(DataUpdateCoordinator[dict[int, tuple[int, str]]]):
 
 
 async def fetch_parameters(
-    client: AccountClient, gateway_id: int, device_id: int
+    client: WolfClient, gateway_id: int, device_id: int
 ) -> list[Parameter]:
     """Fetch all available parameters with usage of WolfClient.
 

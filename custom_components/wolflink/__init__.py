@@ -3,16 +3,15 @@
 import logging
 
 from httpx import RequestError
-from wolf_comm.token_auth import InvalidAuth
-from wolf_comm.wolf_client import FetchFailed
+from wolf_comm.wolf_client import FetchFailed, WolfClient
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.httpx_client import create_async_httpx_client
 
-from .client import AccountClient, async_get_account_client, async_release_account_client
 from .const import DEVICE_GATEWAY, DEVICE_ID, DEVICE_NAME, DOMAIN
 from .coordinator import WolflinkConfigEntry, WolfLinkCoordinator, fetch_parameters
 
@@ -36,19 +35,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: WolflinkConfigEntry) -> 
         gateway_id,
     )
 
-    account_client = async_get_account_client(hass, username, password)
+    wolf_client = WolfClient(
+        username,
+        password,
+        client=create_async_httpx_client(hass=hass, verify_ssl=False, timeout=20),
+    )
 
-    try:
-        parameters = await fetch_parameters_init(account_client, gateway_id, device_id)
+    parameters = await fetch_parameters_init(wolf_client, gateway_id, device_id)
 
-        coordinator = WolfLinkCoordinator(
-            hass, entry, account_client, parameters, gateway_id, device_id
-        )
+    coordinator = WolfLinkCoordinator(
+        hass, entry, wolf_client, parameters, gateway_id, device_id
+    )
 
-        await coordinator.async_config_entry_first_refresh()
-    except Exception:
-        async_release_account_client(hass, username)
-        raise
+    await coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = coordinator
 
@@ -59,10 +58,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WolflinkConfigEntry) -> 
 
 async def async_unload_entry(hass: HomeAssistant, entry: WolflinkConfigEntry) -> bool:
     """Unload a config entry."""
-    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unloaded:
-        async_release_account_client(hass, entry.data[CONF_USERNAME])
-    return unloaded
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -91,16 +87,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def fetch_parameters_init(
-    client: AccountClient, gateway_id: int, device_id: int
-):
+async def fetch_parameters_init(client: WolfClient, gateway_id: int, device_id: int):
     """Fetch all available parameters with usage of WolfClient but handles all exceptions and results in ConfigEntryNotReady."""
     try:
         return await fetch_parameters(client, gateway_id, device_id)
-    except InvalidAuth as exception:
-        raise ConfigEntryAuthFailed(
-            "Invalid authentication while fetching parameters."
-        ) from exception
     except (FetchFailed, RequestError) as exception:
         raise ConfigEntryNotReady(
             f"Error communicating with API: {exception}"
