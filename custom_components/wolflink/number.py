@@ -1,5 +1,8 @@
 """The Wolf SmartSet numbers."""
 
+import re
+import logging
+
 from httpx import RequestError
 from wolf_comm.models import Parameter, Temperature
 from wolf_comm.token_auth import InvalidAuth
@@ -16,14 +19,38 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN, MANUFACTURER
 from .coordinator import WolflinkConfigEntry, WolfLinkCoordinator
 
+_LOGGER = logging.getLogger(__name__)
+
+
+def _normalize_words(text: str) -> set[str]:
+    """Normalize text to lowercase words."""
+    cleaned = re.sub(r"[^a-z0-9]+", " ", text.casefold())
+    return {word for word in cleaned.split() if word}
+
 
 def _is_warmwater_setpoint(parameter: Parameter) -> bool:
     """Return if parameter is a writable warmwater setpoint."""
     if not isinstance(parameter, Temperature) or parameter.read_only:
         return False
 
-    combined = f"{parameter.parent} {parameter.name}".casefold()
-    return "warmwasser" in combined and "solltemperatur" in combined
+    combined = f"{parameter.parent} {parameter.name}"
+    words = _normalize_words(combined)
+    combined_lower = combined.casefold()
+
+    has_warmwater = (
+        "warmwasser" in combined_lower
+        or "trinkwasser" in combined_lower
+        or "dhw" in words
+        or ("ww" in words and "t" in words)
+    )
+    has_setpoint = (
+        "solltemperatur" in combined_lower
+        or "setpoint" in words
+        or ("soll" in words and ("temperatur" in words or "temp" in words or "t" in words))
+        or ("set" in words and ("temp" in words or "temperature" in words))
+        or ("target" in words and ("temp" in words or "temperature" in words))
+    )
+    return has_warmwater and has_setpoint
 
 
 async def async_setup_entry(
@@ -34,10 +61,27 @@ async def async_setup_entry(
     """Set up all writable warmwater setpoints."""
     coordinator = config_entry.runtime_data
 
+    matching_parameters = [
+        parameter for parameter in coordinator.parameters if _is_warmwater_setpoint(parameter)
+    ]
+    _LOGGER.debug(
+        "Discovered %s writable warmwater setpoint parameters: %s",
+        len(matching_parameters),
+        [
+            {
+                "name": parameter.name,
+                "parent": parameter.parent,
+                "parameter_id": parameter.parameter_id,
+                "value_id": parameter.value_id,
+                "bundle_id": parameter.bundle_id,
+            }
+            for parameter in matching_parameters
+        ],
+    )
+
     entities = [
         WolfLinkWarmwaterSetpointNumber(coordinator, parameter, coordinator.device_id)
-        for parameter in coordinator.parameters
-        if _is_warmwater_setpoint(parameter)
+        for parameter in matching_parameters
     ]
     async_add_entities(entities)
 
@@ -56,7 +100,7 @@ class WolfLinkWarmwaterSetpointNumber(
         """Initialize the warmwater setpoint number."""
         super().__init__(coordinator)
         self.parameter = parameter
-        self._attr_name = parameter.name
+        self._attr_name = f"{parameter.parent} {parameter.name}"
         self._attr_unique_id = f"{device_id}:{parameter.parameter_id}:setpoint"
         self._attr_device_class = NumberDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
@@ -102,6 +146,8 @@ class WolfLinkWarmwaterSetpointNumber(
     async def async_set_native_value(self, value: float) -> None:
         """Set a new warmwater setpoint."""
         write_value = round(value)
+        if self.parameter.value_id is None:
+            raise HomeAssistantError("No value_id available for warmwater setpoint.")
 
         try:
             await self.coordinator.async_write_parameter_value(
@@ -116,4 +162,6 @@ class WolfLinkWarmwaterSetpointNumber(
                 f"Could not write warmwater setpoint: {exception}"
             ) from exception
 
+        self._value = float(write_value)
+        self.async_write_ha_state()
         await self.coordinator.async_request_refresh()

@@ -3,11 +3,16 @@
 from datetime import timedelta
 import inspect
 import logging
-
 from httpx import RequestError
 from wolf_comm.models import Parameter
 from wolf_comm.token_auth import InvalidAuth
-from wolf_comm.wolf_client import FetchFailed, ParameterReadError, WolfClient
+from wolf_comm.wolf_client import (
+    FetchFailed,
+    ParameterReadError,
+    ParameterWriteError,
+    WolfClient,
+    WriteFailed,
+)
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_USERNAME
@@ -18,6 +23,7 @@ from .const import DOMAIN
 from .rate_limit import async_auth_guard
 
 _LOGGER = logging.getLogger(__name__)
+_DEFAULT_WRITE_BUNDLE_ID = 1000
 
 type WolflinkConfigEntry = ConfigEntry[WolfLinkCoordinator]
 
@@ -109,13 +115,40 @@ class WolfLinkCoordinator(DataUpdateCoordinator[dict[int, tuple[int, str]]]):
 
     async def async_write_parameter_value(self, parameter: Parameter, value: int) -> None:
         """Write a new value for a parameter."""
-        async with async_auth_guard(self.hass, self._username):
-            await self._wolf_client.write_value(
-                self._gateway_id,
-                self.device_id,
-                parameter.bundle_id,
-                {"ValueId": parameter.value_id, "State": str(value)},
-            )
+        try:
+            parameter_bundle_id = int(parameter.bundle_id)
+            bundle_candidates = [parameter_bundle_id, _DEFAULT_WRITE_BUNDLE_ID]
+        except (TypeError, ValueError):
+            bundle_candidates = [_DEFAULT_WRITE_BUNDLE_ID]
+        tried_bundles: set[int] = set()
+        last_error: Exception | None = None
+
+        for bundle_id in bundle_candidates:
+            if bundle_id in tried_bundles:
+                continue
+            tried_bundles.add(bundle_id)
+            try:
+                async with async_auth_guard(self.hass, self._username):
+                    await self._wolf_client.write_value(
+                        self._gateway_id,
+                        self.device_id,
+                        bundle_id,
+                        {"ValueId": parameter.value_id, "State": str(value)},
+                    )
+                return
+            except (ParameterWriteError, WriteFailed) as exception:
+                last_error = exception
+                _LOGGER.debug(
+                    "Write failed for parameter_id=%s value_id=%s bundle_id=%s: %s",
+                    parameter.parameter_id,
+                    parameter.value_id,
+                    bundle_id,
+                    exception,
+                )
+                continue
+
+        if last_error is not None:
+            raise last_error
 
 
 async def fetch_parameters(
